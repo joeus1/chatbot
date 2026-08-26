@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'HalalWay Toolkit active. Run /verify before every commit. Available: /plan /review /security /tdd /fix /ship /cleanup /learn.'"
+            "command": "echo 'HalalWay Toolkit active. Run /verify before every commit. Available: /plan /review /security /tdd /fix /ship /cleanup /learn /verify.'"
           }
         ]
       }
