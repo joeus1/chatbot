@@ -1,6 +1,6 @@
 {
   "name": "halalway-toolkit",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "HalalWay's Claude Code toolkit: planning, code review, security review, TDD, build-error resolution, and cleanup agents plus stack-aware skills and commands. Self-contained - no external marketplace required.",
   "author": {
     "name": "HalalWay LLC"
@@ -17,5 +17,6 @@
   ],
   "agents": "./.claude/agents",
   "commands": "./.claude/commands",
-  "skills": "./.claude/skills"
+  "skills": "./.claude/skills",
+  "hooks": "./.claude/hooks/hooks.json"
 }
