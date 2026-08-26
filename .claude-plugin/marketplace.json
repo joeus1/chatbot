@@ -1,0 +1,26 @@
+{
+  "name": "halalway",
+  "owner": {
+    "name": "HalalWay LLC"
+  },
+  "metadata": {
+    "description": "HalalWay's in-house Claude Code plugin marketplace"
+  },
+  "plugins": [
+    {
+      "name": "halalway-toolkit",
+      "source": "./",
+      "description": "Planning, code review, security review, TDD, build-error resolution, and cleanup agents plus stack-aware skills and commands for HalalWay projects.",
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": [
+        "agents",
+        "skills",
+        "commands",
+        "tdd",
+        "code-review",
+        "security"
+      ]
+    }
+  ]
+}
