@@ -14,4 +14,4 @@ Single-file Streamlit chat app (`streamlit_app.py`) calling the OpenAI API.
 - API keys via `st.secrets` / environment - never hardcoded, never logged; `.streamlit/secrets.toml` stays gitignored
 - Wrap OpenAI calls in try/except with a friendly `st.error`; bound the history sent to the API
 
-See the `streamlit-patterns` skill for full patterns. The HalalWay Toolkit in `.claude/` provides agents (planner, architect, code-reviewer, security-reviewer, tdd-guide, build-error-resolver, refactor-cleaner, doc-updater) and commands (`/plan /review /security /tdd /fix /ship /cleanup /learn /verify`).
+See the `streamlit-patterns` skill for full patterns and `productionization` for the hardening roadmap. The HalalWay Toolkit in `.claude/` provides agents (planner, architect, code-reviewer, security-reviewer, tdd-guide, build-error-resolver, refactor-cleaner, doc-updater) and commands (`/plan /review /security /tdd /fix /ship /cleanup /learn /verify`).
