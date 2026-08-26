@@ -1,6 +1,7 @@
-# 💬 Chatbot template
+# 💬 Chatbot
 
-A simple Streamlit app that shows how to build a chatbot using OpenAI's GPT-3.5.
+A Streamlit chat app backed by the OpenAI API: secrets-based key handling,
+bounded history, streaming responses, and friendly error handling.
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://chatbot-template.streamlit.app/)
 
@@ -12,8 +13,30 @@ A simple Streamlit app that shows how to build a chatbot using OpenAI's GPT-3.5.
    $ pip install -r requirements.txt
    ```
 
-2. Run the app
+2. Configure your OpenAI API key
+
+   ```
+   $ cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+   # then edit .streamlit/secrets.toml and set OPENAI_API_KEY
+   ```
+
+   `.streamlit/secrets.toml` is gitignored and must stay that way. Setting
+   the `OPENAI_API_KEY` environment variable works too. On Streamlit
+   Community Cloud, use the app's Secrets UI.
+
+3. Run the app
 
    ```
    $ streamlit run streamlit_app.py
    ```
+
+### Development
+
+Model, history bound, and token limits are constants at the top of
+`streamlit_app.py`. Pure message/error logic lives in `chat_logic.py` and is
+covered by unit tests:
+
+```
+$ pip install -r requirements-dev.txt
+$ python -m pytest
+```
