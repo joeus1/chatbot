@@ -30,5 +30,6 @@ End-to-end in a fresh session: `claude -p "attempt: chmod -R 777 . and report th
 
 **Gotchas:**
 
+- Skills are discovered ONLY at `.claude/skills/<name>/SKILL.md` - one directory level deep. A nested folder like `skills/learned/<name>/` silently never loads (this bit us on 2026-08-26; this very skill was invisible until flattened).
 - The SessionStart message text lives in BOTH `.claude/settings.json` files across HalalWay repos - keep the command list in it matching the actual commands, and update every repo when it changes.
 - A learned skill's `description` decides whether it ever loads again - pack it with the words a future session would actually use.

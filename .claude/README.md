@@ -19,7 +19,7 @@ In-house Claude Code toolkit for HalalWay repos. Everything here loads automatic
 
 **Commands** (`commands/`): `/plan`, `/review`, `/security`, `/tdd`, `/fix` (bug fix, reproduction-test-first), `/ship` (verify → commit → push, gated on green), `/cleanup`, `/learn` (save a session lesson as a skill), `/verify` (runs this repo's actual lint + test gauntlet).
 
-**Skills** (`skills/`): `coding-standards`, `tdd-workflow`, `security-review`, `continuous-learning`, plus a repo-specific patterns skill. Skills saved by `/learn` accumulate under `skills/learned/`.
+**Skills** (`skills/`): `coding-standards`, `tdd-workflow`, `security-review`, `continuous-learning`, plus a repo-specific patterns skill. Skills saved by `/learn` land directly under `skills/` alongside the core ones (only one folder level is discovered).
 
 **Hooks** (`hooks/` + `settings.json`): a tested PreToolUse guard that deterministically blocks destructive commands (`rm -rf /`-class deletes, force pushes without lease, `curl | sh`, `chmod 777`, hard resets to origin/main) and blocks writes containing real-looking secrets (OpenAI/Stripe/AWS/GitHub/Slack keys, private key blocks) or untracked-`.env`-into-git mistakes. Fails open on any internal error, so it can never wedge a session. A SessionStart hook announces the toolkit.
 

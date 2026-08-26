@@ -19,7 +19,7 @@ Do NOT save: generic language knowledge, one-off incident details, anything cont
 
 ## Format
 
-Write to `.claude/skills/learned/<kebab-name>/SKILL.md`:
+Write to `.claude/skills/<kebab-name>/SKILL.md` - directly under `skills/`. Only `.claude/skills/*/SKILL.md` is discovered; a deeper folder like `skills/learned/<name>/` silently never loads:
 
 ```markdown
 ---
