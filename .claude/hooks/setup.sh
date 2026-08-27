@@ -13,10 +13,13 @@ if [ -d .claude/.setup-lock ] && [ -z "$(find .claude/.setup-lock -maxdepth 0 -m
     rmdir .claude/.setup-lock 2>/dev/null || true
 fi
 
+# Output goes to .claude/.setup-log (gitignored), not /dev/null: a silent
+# background install that fails is indistinguishable from one still running,
+# which cost real debugging time on 2026-08-27.
 # mkdir is atomic, so concurrent SessionStart runs - including the project and
 # plugin registrations both firing in one session - cannot both install.
 if mkdir .claude/.setup-lock 2>/dev/null; then
-    nohup sh -c 'if [ -f requirements-dev.txt ]; then pip install --quiet -r requirements-dev.txt; fi; pip install --quiet ruff; rmdir .claude/.setup-lock' >/dev/null 2>&1 &
+    nohup sh -c '{ if [ -f requirements-dev.txt ]; then pip install --quiet -r requirements-dev.txt; fi; pip install --quiet ruff; } >.claude/.setup-log 2>&1; rmdir .claude/.setup-lock' >/dev/null 2>&1 &
     echo "HalalWay Toolkit: installing test and lint tooling in the background."
 fi
 exit 0

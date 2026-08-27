@@ -164,3 +164,4 @@ cython_debug/
 #.idea/
 # HalalWay Toolkit SessionStart bootstrap lock
 .claude/.setup-lock/
+.claude/.setup-log
