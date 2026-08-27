@@ -1,11 +1,14 @@
 # chatbot
 
-Single-file Streamlit chat app (`streamlit_app.py`) calling the OpenAI API.
+Streamlit chat app calling the OpenAI API: `streamlit_app.py` owns UI and
+session state; `chat_logic.py` holds the pure, unit-tested message and
+error-mapping logic.
 
 ## Commands
 
 - Run locally: `streamlit run streamlit_app.py`
-- Dependencies: `pip install -r requirements.txt`
+- Dependencies: `pip install -r requirements.txt` (dev: `-r requirements-dev.txt`)
+- Tests: `python -m pytest`
 - `/verify` runs syntax + lint + secrets checks before committing
 
 ## Hard constraints

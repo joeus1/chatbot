@@ -1,56 +1,99 @@
-import streamlit as st
-from openai import OpenAI
+import logging
+import os
 
-# Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+import streamlit as st
+from openai import APIError, OpenAI
+
+from chat_logic import (
+    GENERIC_ERROR_MESSAGE,
+    append_message,
+    build_api_messages,
+    friendly_error,
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+MODEL = "gpt-4o-mini"
+MAX_HISTORY_TURNS = 20
+MAX_COMPLETION_TOKENS = 1024
+SYSTEM_PROMPT = (
+    "You are a helpful, concise assistant. Answer plainly and say so when "
+    "you are unsure."
+)
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+logger = logging.getLogger(__name__)
 
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
+
+def get_api_key():
+    """Read the API key from Streamlit secrets, falling back to the environment.
+
+    Accessing `st.secrets` raises when no secrets file exists at all, so the
+    lookup is wrapped rather than assumed.
+    """
+    try:
+        key = st.secrets.get("OPENAI_API_KEY", "")
+    except Exception:
+        key = ""
+    return key or os.environ.get("OPENAI_API_KEY", "")
+
+
+@st.cache_resource
+def get_client(api_key):
+    return OpenAI(api_key=api_key)
+
+
+st.title("💬 Chatbot")
+st.caption("A chat assistant powered by the OpenAI API.")
+
+api_key = get_api_key()
+if not api_key:
+    st.error(
+        "No OpenAI API key is configured. Add `OPENAI_API_KEY` to "
+        "`.streamlit/secrets.toml` (see `.streamlit/secrets.toml.example`) "
+        "or set it as an environment variable, then reload.",
+        icon="🗝️",
+    )
+    st.stop()
+
+client = get_client(api_key)
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+with st.sidebar:
+    if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
+        st.rerun()
 
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
+if prompt := st.chat_input("Ask anything"):
+    # The user turn is committed to state before the API call so a mid-stream
+    # rerun neither drops the question nor duplicates it.
+    append_message(st.session_state.messages, "user", prompt)
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Generate a response using the OpenAI API.
+    try:
         stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
+            model=MODEL,
+            messages=build_api_messages(
+                st.session_state.messages, SYSTEM_PROMPT, MAX_HISTORY_TURNS
+            ),
+            max_tokens=MAX_COMPLETION_TOKENS,
             stream=True,
         )
-
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
         with st.chat_message("assistant"):
             response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        # Only a completed reply is committed; a failed stream leaves the
+        # user turn in place for a clean retry.
+        if isinstance(response, str) and response.strip():
+            append_message(st.session_state.messages, "assistant", response)
+        else:
+            st.error(GENERIC_ERROR_MESSAGE, icon="⚠️")
+    except APIError as exc:
+        logger.warning("OpenAI API call failed: %s", type(exc).__name__)
+        st.error(friendly_error(exc), icon="⚠️")
+    except Exception:
+        logger.exception("Unexpected failure during completion")
+        st.error(GENERIC_ERROR_MESSAGE, icon="⚠️")
