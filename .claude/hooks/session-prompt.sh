@@ -42,10 +42,20 @@ if [ -d .claude/.setup-lock ]; then
         echo "TOOLING: dev tooling is still installing in the background (.claude/.setup-lock is fresh)."
         echo "Wait for it before running tests or lint, or you will chase spurious import errors."
     fi
-elif [ -s .claude/.setup-log ] && grep -qiE 'error|no matching distribution|could not find|failed' .claude/.setup-log 2>/dev/null; then
-    echo
-    echo "TOOLING: the last background install logged errors. Tail of .claude/.setup-log:"
-    tail -5 .claude/.setup-log | sed 's/^/    /'
+elif [ -s .claude/.setup-log ]; then
+    # setup.sh records the installer's exit status as a marker line in the log.
+    # Key on that, never on the prose: benign installer output routinely carries
+    # the word "error" - http-errors and assertion-error are ordinary transitive
+    # packages - so grepping for it called every good install a failure, every
+    # session. A log with no marker was written by an older setup.sh and cannot
+    # be judged; stay silent rather than guess, because a false alarm on every
+    # session is worse than no alarm at all.
+    setup_status=$(grep '^setup-exit=' .claude/.setup-log 2>/dev/null | tail -1 | cut -d= -f2)
+    if [ -n "$setup_status" ] && [ "$setup_status" != 0 ]; then
+        echo
+        echo "TOOLING: the last background install failed (exit $setup_status). Tail of .claude/.setup-log:"
+        grep -v '^setup-exit=' .claude/.setup-log | tail -5 | sed 's/^/    /'
+    fi
 fi
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
