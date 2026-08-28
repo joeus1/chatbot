@@ -10,7 +10,7 @@ description: How the HalalWay Toolkit in .claude/ is wired and how to safely cha
 **Pattern - where things live and how they load:**
 
 - `.claude/agents/*.md`, `.claude/commands/*.md`, `.claude/skills/*/SKILL.md` - hot-load per session from disk; an edit is live in the next session with no install step.
-- `.claude/settings.json` - wires the guard hook (PreToolUse via `$CLAUDE_PROJECT_DIR`) and the SessionStart announcement. `.claude/hooks/hooks.json` is the same wiring for plugin mode (`${CLAUDE_PLUGIN_ROOT}`); keep the two in sync when changing hook behavior.
+- `.claude/settings.json` - wires the guard hook (PreToolUse via `$CLAUDE_PROJECT_DIR`) and the SessionStart bootstrap. `.claude/hooks/hooks.json` is the same wiring for plugin mode (`${CLAUDE_PLUGIN_ROOT}`); the two are identical apart from that path variable and must stay that way. Only one is live at a time - repo mode reads `settings.json`, plugin mode reads `hooks.json` - so drift hides until the other mode is used, and a checkout that somehow has both active runs every hook twice.
 - `.claude/hooks/guard.py` - blocks destructive Bash and secret-looking writes, exit 2 = block, and MUST fail open (exit 0) on any internal error. Keep that property when editing.
 
 **Testing guard changes** (do this before committing; the same technique validated 21 cases when it was built):
@@ -31,5 +31,5 @@ End-to-end in a fresh session: `claude -p "attempt: chmod -R 777 . and report th
 **Gotchas:**
 
 - Skills are discovered ONLY at `.claude/skills/<name>/SKILL.md` - one directory level deep. A nested folder like `skills/learned/<name>/` silently never loads (this bit us on 2026-08-26; this very skill was invisible until flattened).
-- The SessionStart message text lives in BOTH `.claude/settings.json` files across HalalWay repos - keep the command list in it matching the actual commands, and update every repo when it changes.
+- There is no SessionStart announcement hook. It was removed: it re-injected the toolkit banner on every session start AND every compaction, and the command list in it drifted from the actual commands. Do not reintroduce a hook whose only job is to echo static text - put standing guidance in `CLAUDE.md`, which is already loaded every session.
 - A learned skill's `description` decides whether it ever loads again - pack it with the words a future session would actually use.
