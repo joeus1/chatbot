@@ -10,7 +10,7 @@ description: How the HalalWay Toolkit in .claude/ is wired and how to safely cha
 **Pattern - where things live and how they load:**
 
 - `.claude/agents/*.md`, `.claude/commands/*.md`, `.claude/skills/*/SKILL.md` - hot-load per session from disk; an edit is live in the next session with no install step.
-- `.claude/settings.json` - wires the guard hook (PreToolUse via `$CLAUDE_PROJECT_DIR`) and the SessionStart bootstrap. `.claude/hooks/hooks.json` is the same wiring for plugin mode (`${CLAUDE_PLUGIN_ROOT}`); the two are identical apart from that path variable and must stay that way. Only one is live at a time - repo mode reads `settings.json`, plugin mode reads `hooks.json` - so drift hides until the other mode is used, and a checkout that somehow has both active runs every hook twice.
+- `.claude/settings.json` - wires the guard hook (PreToolUse via `$CLAUDE_PROJECT_DIR`) and the SessionStart bootstrap. `.claude/hooks/hooks.json` is the same wiring for plugin mode (`${CLAUDE_PLUGIN_ROOT}`); the two are identical apart from that path variable and must stay that way. Only one is live at a time - repo mode reads `settings.json`, plugin mode reads `hooks.json` - so drift hides until the other mode is used. Both CAN fire in one session - `setup.sh` carries an atomic lock specifically because the project and plugin registrations both firing was observed - so treat every hook as potentially running twice and keep it idempotent.
 - `.claude/hooks/guard.py` - blocks destructive Bash and secret-looking writes, exit 2 = block, and MUST fail open (exit 0) on any internal error. Keep that property when editing.
 
 **Testing guard changes** (do this before committing; the same technique validated 21 cases when it was built):
