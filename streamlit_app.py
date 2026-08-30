@@ -5,10 +5,13 @@ import streamlit as st
 from openai import APIError, OpenAI
 
 from chat_logic import (
+    EMPTY_RESPONSE_MESSAGE,
     GENERIC_ERROR_MESSAGE,
     append_message,
     build_api_messages,
+    drop_last_message,
     friendly_error,
+    should_keep_turn,
 )
 
 MODEL = "gpt-4o-mini"
@@ -67,7 +70,11 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Ask anything"):
+# chat_input does not trim, so a space-only submission arrives as a truthy
+# string that append_message rejects. Normalising here keeps that rejection
+# from surfacing as a traceback on the one call outside the try below.
+prompt = (st.chat_input("Ask anything") or "").strip()
+if prompt:
     # The user turn is committed to state before the API call so a mid-stream
     # rerun neither drops the question nor duplicates it.
     append_message(st.session_state.messages, "user", prompt)
@@ -89,10 +96,19 @@ if prompt := st.chat_input("Ask anything"):
         # user turn in place for a clean retry.
         if isinstance(response, str) and response.strip():
             append_message(st.session_state.messages, "assistant", response)
+        elif isinstance(response, str):
+            # The call succeeded and streamed nothing. That is not a failure,
+            # and calling it one invites a retry of an already-billed request.
+            st.info(EMPTY_RESPONSE_MESSAGE, icon="💬")
         else:
             st.error(GENERIC_ERROR_MESSAGE, icon="⚠️")
     except APIError as exc:
         logger.warning("OpenAI API call failed: %s", type(exc).__name__)
+        # A turn the API will reject every time has to come back out, or the
+        # bounded window can never evict it and the chat stays wedged. It is
+        # still on screen for this run; the next rerun renders without it.
+        if not should_keep_turn(exc):
+            drop_last_message(st.session_state.messages, "user")
         st.error(friendly_error(exc), icon="⚠️")
     except Exception:
         logger.exception("Unexpected failure during completion")
