@@ -37,13 +37,27 @@ fi
 # entire dependency set. Dropping the -r lines leaves the dev-only pins.
 dev_only=$(grep -vE '^[[:space:]]*(-r|#|$)' requirements-dev.txt 2>/dev/null | tr '\n' ' ')
 
+# With no requirements-dev.txt there is nothing dev-only to install, and a bare
+# `pip install` with no arguments exits non-zero - which would write a failure
+# marker and make session-prompt.sh cry wolf on every session in a repo that
+# simply has no dev pins. Skip the step instead of failing it.
+if [ -n "$dev_only" ]; then
+    dev_cmd='pip install --quiet '"$dev_only"' || rc=$?'
+else
+    dev_cmd=':'
+fi
+
 # Output goes to .claude/.setup-log (gitignored), not /dev/null: a silent
 # background install that fails is indistinguishable from one still running,
-# which cost real debugging time on 2026-08-27.
+# which cost real debugging time on 2026-08-27. The `setup-exit=` marker is the
+# line session-prompt.sh keys on; without it that hook cannot tell a failed
+# install from an old log and stays silent by design, so it must be written on
+# every path. The two pip calls stay separate so a broken dev pin still leaves
+# ruff installed - `pip install a b` installs neither when a fails.
 # mkdir is atomic, so two SessionStart runs racing here - including the project
 # and plugin registrations both firing in one session - cannot both install.
 if mkdir .claude/.setup-lock 2>/dev/null; then
-    nohup sh -c 'echo $$ >.claude/.setup-lock/pid 2>/dev/null; { pip install --quiet '"$dev_only"' ruff; } >.claude/.setup-log 2>&1; rm -rf .claude/.setup-lock' >/dev/null 2>&1 &
+    nohup sh -c 'echo $$ >.claude/.setup-lock/pid 2>/dev/null; rc=0; { '"$dev_cmd"'; pip install --quiet ruff || rc=$?; } >.claude/.setup-log 2>&1; echo "setup-exit=$rc" >>.claude/.setup-log; rm -rf .claude/.setup-lock' >/dev/null 2>&1 &
     echo "HalalWay Toolkit: installing test and lint tooling in the background."
 fi
 exit 0
