@@ -8,7 +8,9 @@ and session state; this module owns message shaping and error mapping.
 from openai import (
     APIConnectionError,
     AuthenticationError,
+    BadRequestError,
     RateLimitError,
+    UnprocessableEntityError,
 )
 
 # User-facing copy for API failures. Raw exception text never reaches the
@@ -29,6 +31,16 @@ GENERIC_ERROR_MESSAGE = (
     "Something went wrong while generating a response. "
     "Your message was kept; try sending it again."
 )
+NON_RETRYABLE_MESSAGE = (
+    "OpenAI could not process that message, so it was removed from the "
+    "conversation. Try a shorter or rephrased version - and use Clear "
+    "conversation if it keeps happening, since a long history can cause "
+    "this too."
+)
+EMPTY_RESPONSE_MESSAGE = (
+    "The assistant returned an empty reply. Nothing failed - ask again or "
+    "rephrase if you were expecting an answer."
+)
 
 
 def append_message(history, role, content):
@@ -38,6 +50,33 @@ def append_message(history, role, content):
     if not isinstance(content, str) or not content.strip():
         raise ValueError("message content must be a non-empty string")
     history.append({"role": role, "content": content})
+
+
+def drop_last_message(history, role):
+    """Remove the final turn in place if it has `role`.
+
+    Returns True when a turn was removed, so callers can tell the difference
+    between undoing their own append and finding nothing to undo.
+    """
+    if history and history[-1]["role"] == role:
+        history.pop()
+        return True
+    return False
+
+
+def should_keep_turn(exc):
+    """Whether the user's turn should stay in history after `exc`.
+
+    Auth, rate-limit, connection and server errors are all worth retrying with
+    the same message unchanged, so the turn stays and the user can resend once
+    the key, the quota or the network is fixed.
+
+    A 400 or 422 is caused by the request content itself - an over-long context
+    or rejected content. Keeping that turn would make every later message fail
+    identically, and the bounded window can never evict it, so the chat wedges
+    until the whole conversation is cleared.
+    """
+    return not isinstance(exc, (BadRequestError, UnprocessableEntityError))
 
 
 def build_api_messages(history, system_prompt, max_turns):
@@ -67,4 +106,7 @@ def friendly_error(exc):
     # APITimeoutError subclasses APIConnectionError, so one branch covers both.
     if isinstance(exc, APIConnectionError):
         return CONNECTION_ERROR_MESSAGE
+    # Checked after the config-caused errors above, which keep their own copy.
+    if not should_keep_turn(exc):
+        return NON_RETRYABLE_MESSAGE
     return GENERIC_ERROR_MESSAGE

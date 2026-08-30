@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/setup.sh\" || true"
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/setup.sh\""
           }
         ]
       }

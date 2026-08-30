@@ -1,0 +1,38 @@
+# PrimeOps
+
+> Restaurant operations intelligence organized around evidence, prioritized findings, accountable action, and verification.
+
+Site: https://www.getprimeops.ai/
+Contact: support@getprimeops.ai
+
+## Public experience
+
+PrimeOps explains a target workflow for connecting restaurant operating evidence across sales, food, labor, vendors, delivery, and deposits; reconciling the source records; ranking findings; assigning corrective action; and separating estimated opportunities from verified outcomes.
+
+The public sample assessment and customer portal preview use synthetic data. Estimated opportunities are illustrative and are not guaranteed outcomes. Generated representative restaurant imagery is not presented as customer photography or endorsement.
+
+## Operating areas
+
+- Food and paper cost: purchase-price drift, yield, waste, recipe variance, and missing credits.
+- Labor: schedule-to-payroll variance, overtime pressure, productivity, and daypart coverage.
+- Delivery: contract rates, commissions, adjustments, deductions, refunds, settlements, and deposits.
+- Vendors: invoice exceptions, duplicate charges, unit-price changes, and contract compliance.
+- Reconciliation: POS, bank, marketplace, and settlement records that do not agree.
+- Multi-location review: comparable patterns and location-specific corrective priorities.
+
+## Evidence and outcome policy
+
+Findings should identify source evidence, affected location, date range, calculation method, assumptions, impact, confidence, recommendation, owner, status, and audit history. Estimates remain separate from verified value. PrimeOps does not describe estimated savings as guaranteed results.
+
+## Customer account release state
+
+The current public build includes a synthetic portal and deliberately closed sign-in/account-creation routes. It does not collect customer credentials or represent provider-backed authentication, customer organizations, row-level security, encrypted customer storage, MFA, session revocation, private uploads, audit retention, backup restoration, or transactional identity email as active.
+
+Those customer controls require an approved identity/session provider, same-origin server authorization boundary, managed tenant database and row-level security, private object storage/scanning, key-management evidence, provider ownership, and a verified Preview before Production activation.
+
+## Safety and privacy
+
+- No Production customer data is used in the synthetic preview.
+- Consequential actions remain behind explicit authorization and human approval.
+- Do not email passwords, MFA codes, recovery tokens, payment data, credentials, or sensitive restaurant source files.
+- Draft legal pages are marked as drafts and excluded from search indexing and the public sitemap pending authorization.
