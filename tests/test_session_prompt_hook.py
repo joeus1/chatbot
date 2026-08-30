@@ -14,7 +14,10 @@ SUITE = Path(__file__).resolve().parent.parent / ".claude" / "hooks" / "session-
 
 def test_session_prompt_hook_suite():
     assert SUITE.is_file(), f"missing shell suite at {SUITE}"
+    # check=False: the assertion below reports the suite's own output on
+    # failure, which CalledProcessError would replace with a bare exit code.
     result = subprocess.run(
-        ["sh", str(SUITE)], capture_output=True, text=True, timeout=180
+        ["sh", str(SUITE)], capture_output=True, text=True, timeout=180,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr

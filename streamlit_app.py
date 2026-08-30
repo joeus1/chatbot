@@ -33,7 +33,12 @@ def get_api_key():
     """
     try:
         key = st.secrets.get("OPENAI_API_KEY", "")
-    except Exception:
+    # Broad on purpose. A missing file raises StreamlitSecretNotFoundError, but
+    # an unreadable or malformed secrets.toml raises something else again, and
+    # every one of those cases should fall through to the environment rather
+    # than replace the page with a traceback. If neither source has a key the
+    # app already says so, with instructions.
+    except Exception:  # noqa: BLE001
         key = ""
     return key or os.environ.get("OPENAI_API_KEY", "")
 

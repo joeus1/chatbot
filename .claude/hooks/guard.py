@@ -65,10 +65,14 @@ def is_git_ignored(path: str) -> bool:
     try:
         result = subprocess.run(
             ["git", "check-ignore", "-q", path],
-            capture_output=True, timeout=5,
+            capture_output=True, timeout=5, check=False,
         )
         return result.returncode == 0
-    except Exception:
+    # git missing or unrunnable (OSError) and a hung check (TimeoutExpired) are
+    # the ways this realistically fails. Anything else reaches the handler in
+    # __main__, which exits 0 - so an unforeseen error still fails open, just
+    # one level up.
+    except (OSError, subprocess.SubprocessError):
         return True  # can't tell -> fail open
 
 
@@ -113,5 +117,9 @@ if __name__ == "__main__":
         main()
     except SystemExit:
         raise
-    except Exception:
+    # Deliberately blind, and the one place in this file that must be: the
+    # guard's contract is that it can never take a session down, so an error
+    # class nobody anticipated is exactly the case this exists to swallow.
+    # Narrowing it would trade a lint warning for the failure mode it guards.
+    except Exception:  # noqa: BLE001
         sys.exit(0)  # never break the session because the guard broke
