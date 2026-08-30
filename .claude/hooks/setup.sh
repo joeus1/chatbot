@@ -19,7 +19,7 @@ fi
 # mkdir is atomic, so concurrent SessionStart runs - including the project and
 # plugin registrations both firing in one session - cannot both install.
 if mkdir .claude/.setup-lock 2>/dev/null; then
-    nohup sh -c '{ if [ -f requirements-dev.txt ]; then pip install --quiet -r requirements-dev.txt; fi; pip install --quiet ruff; } >.claude/.setup-log 2>&1; rmdir .claude/.setup-lock' >/dev/null 2>&1 &
+    nohup sh -c 'rc=0; { if [ -f requirements-dev.txt ]; then pip install --quiet -r requirements-dev.txt || rc=$?; fi; pip install --quiet ruff || rc=$?; } >.claude/.setup-log 2>&1; echo "setup-exit=$rc" >>.claude/.setup-log; rmdir .claude/.setup-lock' >/dev/null 2>&1 &
     echo "HalalWay Toolkit: installing test and lint tooling in the background."
 fi
 exit 0
