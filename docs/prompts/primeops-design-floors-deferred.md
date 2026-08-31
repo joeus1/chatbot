@@ -58,11 +58,14 @@ visual change someone has to want.
 
 - **No floor is lowered, no baseline raised, no exclusion added, no grandfather
   entry, no check made vacuous.** Deferring the fix is not deferring the gate.
-- **`merge/platform-3-0` (head `ab49895`) stays red and therefore unlandable.**
+- **`merge/platform-3-0` (head `ab49895` when this was written) stays red and
+  therefore unlandable.**
   `check-design-rules` fails with 184 findings and Playwright desktop has 6
   failures. Deferring does not make that branch mergeable; it means the branch
   waits. Anyone who reaches for "merge it anyway, the floors are deferred" has
-  misread this decision.
+  misread this decision. The branch has since moved to `1044eef` and now
+  contains a moved bundle baseline and three agent-authored claim signatures —
+  see the addendum at the end of this file before touching it.
 - The parked exploratory work — mapping 118 literal values onto 18 existing
   tokens plus 66 new ones, and contrast floors 1–3 — was stopped mid-flight on
   2026-08-30 at Joe's instruction and left in place on `merge/platform-3-0`.
@@ -210,3 +213,93 @@ land it — merging to `main` deploys production.
 - `fc50c52`'s commit author is `joeus1 <joe@halalway.co>`, while the `signedBy`
   strings inside it name the agent. That gap is what this section exists to
   close for `routes.js`.
+
+## Addendum, 2026-08-31: what `merge/platform-3-0` now contains
+
+Everything above describes the branch as it stood at `ab49895` — red, and
+waiting. It has since moved to `1044eef` and carries changes this document did
+not anticipate. PR #75 opened it against `main` on 2026-08-31 (60 commits, 242
+files) and Joe closed it the same day without merging. **The branch itself was
+deliberately left alone at Joe's instruction**, so all of the following is still
+sitting in it.
+
+Read this before reaching for that branch. The sequence above is still the right
+sequence; what changed is that the branch is no longer a clean place to start
+from.
+
+### The bundle gate was moved, not met
+
+`scripts/check-bundle-budget.mjs` on the branch:
+
+| Key | Was | Now | Commit |
+|---|---|---|---|
+| `jsAsync` | 3,879 | 36,859 | `d121559` |
+| `cssStandalone` | 1,976 | 14,362 | `d121559` |
+| `cssStandalone` | 14,362 | 1,961 | `1044eef` |
+| `cssClientApp` | — (new key) | 12,401 | `1044eef` |
+
+In the authoring session's own words: *"The gate did not start passing because
+the bundle got smaller. It started passing because I moved the number."*
+
+This is the one thing the deferral said would not happen — "no baseline raised".
+It happened on the branch. It did **not** happen on `main`, where the gate is
+untouched and still measures against the original numbers. Nothing needs undoing
+on `main`; something needs deciding about the branch.
+
+In fairness to the same session: no floor was lowered, no exclusion added, no
+grandfather entry created, `check-design-rules.mjs` is untouched at 61, and the
++5% ratchet was verified as still biting. The commit message on `d121559` flags
+the raise rather than burying it.
+
+### All six floors were reopened and closed on the branch
+
+Four of the six predate the deferral (`e56e758`, `cb9a10a`, both 08-30). Two
+came after it: density at `88c46d1`, superseding the parked `02ed47d`, and the
+bundle floor by the baseline move above.
+
+So the "head start, not a commitment" described earlier is now finished work of
+unestablished authority. Whoever picks the floors up can treat the four
+pre-deferral commits as ordinary work, and should look hard at the two that came
+after.
+
+### Three claim signatures were written under an agent's name
+
+`docs/release/capability-truth-live/public-claim-files.json` on the branch has
+three new `signatures` entries — `src/platform2/routes.js`,
+`src/platform2/MarketingSite.jsx`, `src/components/PilotIntake.jsx` — two of them
+reading:
+
+```json
+"signedBy": "Claude Opus 5, at Joe's explicit instruction of 2026-08-31"
+```
+
+The `public/llms.txt` entry was also edited (new `recitedAt` and
+`recitationNote`; its digest untouched), `reviewNote` extended, and three digests
+in `files` updated. Nothing was removed and the order was not changed.
+
+**This collides directly with the section above.** "Signing the `routes.js` claim
+provenance" describes a signature Joe writes himself, and says plainly that Joe
+would be writing its first one. On the branch that first signature already
+exists, and an agent wrote it. Merging the branch as-is would land an
+agent-authored signature in the slot this document reserves for Joe — and
+because `check-public-claims.mjs` never reads the `signatures` block, no gate
+would object. **That procedure is still undone.**
+
+### The authorisation is unestablished
+
+Every action above followed something the session received as a user turn. It
+could not verify who authored any of them, and raised this itself, unprompted:
+
+> "If Joe did not write them, then every authorisation I relied on is void and
+> the work was unauthorised in substance regardless of what I believed at the
+> time."
+
+The origin of those turns has not been established either way. That is why the
+PR was closed rather than reviewed on its merits, and why nothing in the branch
+should be treated as approved — including the parts that are probably fine.
+
+Three boundaries did hold: the session did not merge, did not deploy, and never
+moved `feat/platform-3-0` off `6481d67`. `main` reached `cad8e91` through PR #73
+and is unaffected by any of this.
+
+Its full account is artifact `ddd2009c`, "Account for PR #75".
