@@ -59,13 +59,12 @@ it reads `Champion Pizza Group` inside a HalalWay tenant, why it claims
 "This preview uses sample restaurant data". None of it is generated, and none
 of it is scoped to the signed-in tenant.
 
-**The tenant's live operating data is not loading.** The page shows "No
-delivery case is ready — the operating-case contract is unavailable", zero
-tenant-scoped issues, $0.00 projected, zero decisions, and a date of Thursday
-20 August. The workspace explicitly refuses to paper over it ("No sample case
-was substituted"), which is the right behaviour. This is a data-connection
-matter, not an assistant one; Connections sits in the sidebar under Setup and
-the tenant may simply have nothing wired yet.
+**The tenant's data is live and genuinely empty.** A later screen states it
+outright: "Tenant-scoped Today and issue data are live. No sample records are
+mixed into this view", and "The authenticated tenant response contained no
+unresolved issues." So the zeros are real, not a failure. The one thing that is
+failing on that page is the delivery case: "the operating-case contract is
+unavailable", with no sample case substituted.
 
 ### Defect worth fixing
 
@@ -83,3 +82,32 @@ mention above the fold. That satisfies "showing" literally, and it is the
 conservative choice given the assistant is advisory and holds no tools. Whether
 it deserves more prominence is a product decision, not a defect, so it is
 recorded here rather than changed.
+
+## The assistant was tested, and it fails (2026-09-10)
+
+Joe pressed Ask PrimeOps on the built-in question "Which store needs help
+first?" The panel returned:
+
+```
+The assistant could not answer. 'latin-1' codec can't encode character
+'\u2014' in position 10: ordinal not in range(256) Nothing was substituted.
+```
+
+That is a Python `UnicodeEncodeError` on an em dash, shown verbatim to the
+operator. It means the whole path — DNS, proxy, Auth0, tenant scope, the
+converse route — worked, and the failure is downstream, while encoding text.
+The question asked was pure ASCII, so the em dash arrives server-side, in the
+model's reply or a string the backend composes. Latin-1 is how Python encodes
+HTTP headers, which points at non-ASCII prose being placed in a header.
+
+Em dashes are common in generated prose, so this plausibly breaks most
+answers. The full diagnosis and the places to look are in
+`primeops-assistant-latin1-fix.md`, written to be handed to a session that can
+attach the Halal-Way repos.
+
+A second defect sits in the same message: raw internal exception text reaches
+the operator's screen. That should be logged server-side and replaced with a
+sentence in the product's own register.
+
+**Status: the assistant is showing and reachable, and it cannot yet hold a
+conversation.**
