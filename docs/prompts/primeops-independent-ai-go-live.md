@@ -1,72 +1,48 @@
-# Independent AI on the PrimeOps website — go-live findings (2026-09-06)
+# Independent AI on the PrimeOps website — go-live record
 
 Joe asked for the Independent AI to be showing, live, and able to converse on
-the PrimeOps website. It is not, as of the probe below. This records exactly
-where the customer path breaks and who can fix each break. Written from the
-`joeus1/chatbot` session, which cannot attach the `Halal-Way/*` repos
-(cross-owner `add_repo` refusal), so nothing here was changed in those repos.
+the PrimeOps website. On **2026-09-06** it was not: four hops of the customer
+path were broken. On **2026-09-10**, after Joe added the DNS record and set the
+Railway variables and the code-side work landed, every hop is connected and the
+conversation route answers as an authenticated route should.
 
-## What "the website" resolves to
+This session works from `joeus1/chatbot` and cannot attach the `Halal-Way/*`
+repos (cross-owner `add_repo` refusal), so everything below is measured against
+the deployed hosts, not read from those repos' source.
 
-The public site `https://www.getprimeops.ai/` (Halal-Way/primeops-site, Vercel,
-release `a71958e`) has **no chat, no assistant, no AI entry point** anywhere:
-not in the HTML, not in `assets/main-*.js`, not in `llms.txt`. Its only
-serverless route is `POST /api/pilot` (the consultation form). "Start PrimeOps"
-goes to `/create-account`, whose page links out to the workspace app and the
-AEI signup page.
+## The customer path, then and now
 
-The AI lives one hop further, in the customer workspace
-`https://primeops-workspace-production-production.up.railway.app/` (Auth0
-sign-in, routes `/app/today` … `/app/help`). Its bundle carries the
-"Ask PrimeOps for help" panel ("Ask about the selected store, number, issue,
-action, or source record using text or voice").
-
-## Where the path breaks
-
-| Hop | State | Evidence |
+| Hop | 2026-09-06 | 2026-09-10 |
 |---|---|---|
-| 1. Public site → AI | **Absent.** No link, card, or widget mentions the assistant. | `main-DRVx_Zlb.js` has no chat/assistant strings; only `/api/pilot`. |
-| 2. Workspace build → backend | **Unconfigured.** `VITE_PRIMEOPS_API_BASE_URL` was unset at build time, so after sign-in the app shows "This build has no API configured" and runs in Sample mode with synthetic data. | `index-CxEZArfa.js`: the only backend URL literal is the Auth0 audience; the "no API configured" page is compiled in. |
-| 3. `api.getprimeops.ai` | **Does not exist in DNS.** NXDOMAIN at the GoDaddy zone (`ns09.domaincontrol.com`). It is the Auth0 audience the workspace is built with. | `cloudflare-dns.com` query → status 3; `www` and apex resolve fine. |
-| 4. AEI backend (Railway) | **Healthy but sealed.** `/ready` reports build `1bf8415`, `ai.enabled: true`, `daily_tenant_cap: 1.00`, `routes_declared: 1`. Every other route, with or without a bearer token, returns `403 {"error":"route_not_in_verified_boundary"}`; OpenAPI lists only `/health` and `/ready` ("PrimeOps AEI Recovery Gateway"). | Probed `/api/primeops/chat`, `/api/ai/chat`, `/v1/ai/ask`, `/api/tenants/me` and ten others. |
+| Public site entry point | None anywhere on `www.getprimeops.ai` (release `a71958e`). | Release `7369c59`. Footer link "Ask PrimeOps in the workspace" → `/sign-in`, plus assistant copy on the access page and a paragraph in `llms.txt`. |
+| Workspace → backend | `VITE_PRIMEOPS_API_BASE_URL` unset; app showed "This build has no API configured" and ran in Sample mode. | Rebuilt (`index-B5d5k9jW.js`). Calls a same-origin path `/primeops-api`, which proxies to the AEI backend. |
+| `api.getprimeops.ai` | NXDOMAIN at the GoDaddy zone, despite being the compiled Auth0 audience. | `CNAME p01f0wdv.up.railway.app`. `/health` and `/ready` both 200. |
+| AI conversation route | Every route but health/readiness returned `403 route_not_in_verified_boundary`. | `POST /aei/ai/converse` returns `401 unauthorized` without a token — the route is inside the verified boundary and auth-gated. |
+| Spend cap | `daily_tenant_cap: 1.00` | `daily_tenant_cap: 25.00`, `max_invocation_cost: 0.50`, AI enabled. |
+| AEI build | `1bf8415` | `fe7b19e` |
 
-Auth0 itself answers (`/.well-known/openid-configuration` → 200).
+The workspace's own call, read out of the bundle: `POST /aei/ai/converse` with
+`{message, history}`, an `Authorization: Bearer` token and an
+`X-PrimeOps-Tenant-Id` header, expecting `{reply, outcome, degraded_reason}`.
 
-## Context from the earlier session
+## What is verified, and what is not
 
-Session "Independent AI module for customers" (2026-09-05, sources: chatbot,
-primeops-site, primeops-aei; branch `claude/independent-ai-module-hcp5k8`)
-reported "AI path live on claude-opus-5, production `1bf8415` smoked & ready"
-and stopped on one human action: **raise `DAILY_SPEND_CAP` to $25.00 in
-Railway**. That matches the `/ready` output (`daily_tenant_cap: "1.00"`). Its
-"live" claim is about the backend AI path, not about anything a customer can
-reach from the website. Nothing from that branch was pushed to `joeus1/chatbot`.
+**Verified against the live hosts:** DNS resolution, backend readiness, the
+raised cap, the same-origin proxy reaching the backend (`/primeops-api/ready`
+returns the AEI payload), the conversation route being inside the boundary, and
+the public site's entry point and `llms.txt` paragraph.
 
-## What has to happen, and by whom
+**Not verified:** an actual model reply. That needs a signed-in operator's
+Auth0 token, which this session neither has nor should have. The 401 proves the
+route is live and correctly refuses anonymous callers; it does not prove a
+tenant gets an answer. **The remaining acceptance test is Joe's:** sign in at
+`getprimeops.ai`, open the workspace, ask "What needs my attention before
+dinner?", and confirm a reply plus movement in the AEI invocation counters.
 
-Human-only (credentials this and any Claude session lack):
+## One judgement call left open
 
-1. **DNS**: create `api.getprimeops.ai` at GoDaddy pointing at the AEI Railway
-   service (and add it as a custom domain on that service), or change the
-   workspace's Auth0 audience and API base to the Railway hostname instead.
-2. **Railway**: set `VITE_PRIMEOPS_API_BASE_URL` on the workspace service and
-   redeploy it; raise `DAILY_SPEND_CAP` on `primeops-aei` if the $25 figure is
-   approved.
-
-Code, in a session with `Halal-Way/primeops-site` + `Halal-Way/primeops-aei`
-attached (PRs, not direct pushes — merging to `main` deploys):
-
-3. **Gateway boundary**: declare the AI conversation route inside the AEI
-   "verified boundary" so it stops returning `route_not_in_verified_boundary`
-   for authenticated tenants. Verify with a real Auth0 token, not a guess.
-4. **Workspace**: make "Ask PrimeOps" fail loudly when the API base is unset
-   (today it silently degrades to Sample mode), and smoke a real turn end to
-   end after 1–3 land.
-5. **Public site**: add a visible entry point for the assistant (a nav item
-   or card on `/`, and a line in `llms.txt`), pointing signed-in operators to
-   the workspace panel. Keep the public site itself chat-free unless a
-   separate decision funds an unauthenticated assistant with its own cap.
-
-Acceptance: an operator opens getprimeops.ai, reaches the workspace, signs in,
-asks "What needs my attention before dinner?" and gets a model reply that the
-AEI `/ready` invocation counters reflect.
+The public entry point is a **footer link only** — no nav item, no card, no
+mention above the fold. That satisfies "showing" literally, and it is the
+conservative choice given the assistant is advisory and holds no tools. Whether
+it deserves more prominence is a product decision, not a defect, so it is
+recorded here rather than changed.
