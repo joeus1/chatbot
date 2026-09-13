@@ -32,12 +32,15 @@ raised cap, the same-origin proxy reaching the backend (`/primeops-api/ready`
 returns the AEI payload), the conversation route being inside the boundary, and
 the public site's entry point and `llms.txt` paragraph.
 
-**Not verified:** an actual model reply. That needs a signed-in operator's
-Auth0 token, which this session neither has nor should have. The 401 proves the
-route is live and correctly refuses anonymous callers; it does not prove a
-tenant gets an answer. **The remaining acceptance test is Joe's:** sign in at
-`getprimeops.ai`, open the workspace, ask "What needs my attention before
-dinner?", and confirm a reply plus movement in the AEI invocation counters.
+**Not verifiable from this session:** an actual model reply. That needs a
+signed-in operator's Auth0 token, which this session neither has nor should
+have. The 401 proves the route is live and correctly refuses anonymous callers;
+it does not prove a tenant gets an answer.
+
+**Joe ran that test the same day, and it failed.** Signed in at
+`app.getprimeops.ai` — the workspace host, not the `www` marketing site — the
+assistant returned a Python encoding error instead of a reply. See *The
+assistant was tested, and it fails* at the end of this record.
 
 ## What the signed-in workspace actually shows (2026-09-10, from Joe's screen)
 
@@ -48,8 +51,8 @@ them is the assistant.
 
 **The assistant is showing and reachable.** The "Ask about this" composer, its
 microphone, the "Ask PrimeOps" button and three suggested questions are the
-live path. Its own copy says nothing is sent until the button is pressed, so
-the acceptance test is still unrun.
+live path. Its own copy says nothing is sent until the button is pressed. Joe
+pressed it; what came back is recorded at the end of this file.
 
 **The block above it is not the assistant.** "In plain English / Why it matters
 / How we got here / Records used / What to check next / Limits" is static copy
@@ -109,5 +112,10 @@ A second defect sits in the same message: raw internal exception text reaches
 the operator's screen. That should be logged server-side and replaced with a
 sentence in the product's own register.
 
-**Status: the assistant is showing and reachable, and it cannot yet hold a
-conversation.**
+**Status as of 2026-09-10: the assistant is showing and reachable, and it
+cannot yet hold a conversation.**
+
+That status is not current. The AEI backend redeployed to build `c0d3b2c` on
+2026-09-13 and nobody has re-tested, so the defect may already be fixed. The
+fix brief explains why asking the assistant a question cannot settle that, and
+gives a check that can.
