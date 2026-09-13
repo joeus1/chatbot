@@ -4,6 +4,15 @@ Hand this to a session with `Halal-Way/primeops-aei` (and `primeops-site` if the
 error-surfacing change lands there). This session works from `joeus1/chatbot`
 and cannot attach those repos.
 
+## Before you start: check whether it is already fixed
+
+The AEI backend redeployed between the observation below and this note — build
+`fe7b19e` on 2026-09-10, build `c0d3b2c` on 2026-09-13. Nobody has re-run the
+test against the new build, so the defect may already be gone. Reproduce it
+first (ask a question and see whether a reply containing an em dash comes
+back). If it no longer fires, confirm a regression test exists for it and stop;
+if it does, everything below still applies.
+
 ## The failure, as an operator sees it
 
 Signed in at `app.getprimeops.ai` as tenant **HalalWay LLC**, asking the
