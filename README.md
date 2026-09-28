@@ -43,8 +43,8 @@ hand-worked example live in the platform repo at
 
 ### Development
 
-Model, history bound, and token limits are constants at the top of
-`streamlit_app.py`. Pure message, upload and error logic lives in
+Model (`gpt-4o`; it must accept image input for photo uploads), history
+bound, and token limits are constants at the top of `streamlit_app.py`. Pure message, upload and error logic lives in
 `chat_logic.py` and is covered by unit tests:
 
 ```

@@ -20,7 +20,10 @@ from chat_logic import (
     upload_to_turn,
 )
 
-MODEL = "gpt-4o-mini"
+# gpt-4o over gpt-4o-mini: the review is three tables and a set of refusals
+# the prompt spells out, and the smaller model drifts on both. Both accept
+# image input, which the photo upload path needs.
+MODEL = "gpt-4o"
 MAX_HISTORY_TURNS = 20
 # A full review carries three tables and seven sections; 1024 cut it mid-table.
 MAX_COMPLETION_TOKENS = 4096
