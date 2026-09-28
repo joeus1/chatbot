@@ -1,8 +1,11 @@
 # chatbot
 
-Streamlit chat app calling the OpenAI API: `streamlit_app.py` owns UI and
-session state; `chat_logic.py` holds the pure, unit-tested message and
-error-mapping logic.
+PrimeOps Schedule Review: a Streamlit app calling the OpenAI API. A manager
+uploads a schedule, answers preset questions, and gets findings and a proposed
+fix. `streamlit_app.py` owns UI and session state; `chat_logic.py` holds the
+pure, unit-tested message, upload and error-mapping logic; the system prompt
+is the document at `prompts/schedule_review.md` (design and worked example in
+`primeops-aei/docs/product/schedule_brain/`; keep both copies the same).
 
 ## Commands
 
