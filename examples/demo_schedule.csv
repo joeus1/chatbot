@@ -1,0 +1,19 @@
+Day,Start,End,Role,Person,Rate
+Mon,07:00,15:00,Open Lead,Dana Kowalski,DEMO
+Mon,07:00,15:00,Cook,Omar Saleh,DEMO
+Mon,11:00,15:00,Server,Priya Natarajan,DEMO
+Mon,15:00,23:00,Close Lead,Luis Mendoza,DEMO
+Mon,15:00,23:00,Close Cook,Tasha Brooks,DEMO
+Mon,17:00,22:00,Server,Evan Reyes,DEMO
+Tue,07:00,15:00,Open Lead,Luis Mendoza,DEMO
+Tue,07:00,15:00,Cook,Omar Saleh,DEMO
+Tue,11:00,15:00,Server,,DEMO
+Tue,15:00,23:00,Close Lead,Dana Kowalski,DEMO
+Tue,15:00,23:00,Close Cook,Tasha Brooks,DEMO
+Tue,17:00,22:00,Server,Priya Natarajan,DEMO
+Wed,07:00,15:00,Open Lead,Dana Kowalski,DEMO
+Wed,07:00,3p,Cook,Tasha Brooks,DEMO
+Wed,11:00,15:00,Server,Evan Reyes,DEMO
+Wed,15:00,23:00,Close Lead,Luis Mendoza,DEMO
+Wed,15:00,23:00,Close Cook,Omar Saleh,DEMO
+Wed,17:00,22:00,Server,Evan Reyes,DEMO
