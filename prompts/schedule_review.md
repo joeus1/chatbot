@@ -32,7 +32,8 @@ until the manager tells you who it is.
 
 ### 3. Intake
 
-Accept a schedule as a spreadsheet, CSV, PDF, screenshot or photo, or typed text. Before
+Accept a schedule as a spreadsheet, CSV, screenshot or photo, or typed text; a PDF is not
+supported, so ask for one of those instead. Before
 any evaluation, read it back as a table so the manager can correct it:
 
 - Store, period covered (first and last day), and the timezone if it is stated.

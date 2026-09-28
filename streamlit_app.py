@@ -66,7 +66,11 @@ def complete_turn(client, system_prompt):
     The caller has committed the user turn before this runs, so a mid-stream
     rerun neither drops the question nor duplicates it. Only a completed reply
     is committed; a failed stream leaves the user turn in place for a retry.
+
+    Returns False when the user turn was dropped as non-retryable, so a caller
+    that recorded the turn as sent can un-record it.
     """
+    kept = True
     try:
         stream = client.chat.completions.create(
             model=MODEL,
@@ -92,11 +96,12 @@ def complete_turn(client, system_prompt):
         # bounded window can never evict it and the chat stays wedged. It is
         # still on screen for this run; the next rerun renders without it.
         if not should_keep_turn(exc):
-            drop_last_message(st.session_state.messages, "user")
+            kept = not drop_last_message(st.session_state.messages, "user")
         st.error(friendly_error(exc), icon="⚠️")
     except Exception:
         logger.exception("Unexpected failure during completion")
         st.error(GENERIC_ERROR_MESSAGE, icon="⚠️")
+    return kept
 
 
 st.title("📋 PrimeOps Schedule Review")
@@ -118,18 +123,38 @@ if not api_key:
     st.stop()
 
 client = get_client(api_key)
-system_prompt = get_system_prompt()
+try:
+    system_prompt = get_system_prompt()
+except (OSError, ValueError):
+    logger.exception("system prompt could not be loaded")
+    st.error(
+        f"The system prompt at `{SYSTEM_PROMPT_PATH}` is missing or empty, so the "
+        "app cannot review anything. Restore the file and reload.",
+        icon="📄",
+    )
+    st.stop()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+# Uploads are tracked by Streamlit's per-upload-event file_id, so a corrected
+# sheet re-exported under the same name and size is a new upload and a
+# rejected one is refused once. Both are reset with the conversation.
 if "sent_upload" not in st.session_state:
     st.session_state.sent_upload = None
+if "rejected_upload" not in st.session_state:
+    st.session_state.rejected_upload = None
+# The uploader widget keeps its file across reruns, including the one Clear
+# triggers; bumping its key is how the widget itself is reset, so the old
+# schedule is not re-sent, and re-billed, the moment the transcript is empty.
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
 with st.sidebar:
     st.subheader("Schedule")
     upload = st.file_uploader(
         "Upload this period's schedule",
         type=list(UPLOAD_TYPES),
+        key=f"uploader-{st.session_state.uploader_key}",
         help=(
             "CSV, TSV, TXT, XLSX, or a PNG/JPG/WEBP photo or screenshot. The "
             "file goes to OpenAI for the review and is not stored by this app. "
@@ -140,6 +165,8 @@ with st.sidebar:
     if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
         st.session_state.sent_upload = None
+        st.session_state.rejected_upload = None
+        st.session_state.uploader_key += 1
         st.rerun()
 
 for message in st.session_state.messages:
@@ -147,21 +174,29 @@ for message in st.session_state.messages:
         st.markdown(display_text(message))
 
 # An upload is sent once, as its own user turn, the first time it appears.
-# The uploader keeps returning the same file on every rerun, so the turn is
-# keyed on name and size to stop it being re-sent after each chat message.
+# The uploader returns the same file on every rerun, so the turn is keyed on
+# the upload event's file_id to stop it being re-sent after each message.
 if upload is not None:
-    upload_key = (upload.name, upload.size)
-    if upload_key != st.session_state.sent_upload:
+    rejected = st.session_state.rejected_upload
+    if rejected is not None and rejected[0] == upload.file_id:
+        # Refused already; show the same reason without parsing it again.
+        st.error(rejected[1], icon="📎")
+    elif upload.file_id != st.session_state.sent_upload:
         try:
             content, display = upload_to_turn(upload.name, upload.getvalue())
         except UploadError as exc:
+            st.session_state.rejected_upload = (upload.file_id, str(exc))
             st.error(str(exc), icon="📎")
         else:
-            st.session_state.sent_upload = upload_key
+            # Recorded before the call so a rerun mid-stream cannot send the
+            # file twice; un-recorded if the API rejects the turn outright, so
+            # the same file can be sent again once it has been fixed.
+            st.session_state.sent_upload = upload.file_id
             append_message(st.session_state.messages, "user", content, display=display)
             with st.chat_message("user"):
                 st.markdown(display)
-            complete_turn(client, system_prompt)
+            if not complete_turn(client, system_prompt):
+                st.session_state.sent_upload = None
 
 # chat_input does not trim, so a space-only submission arrives as a truthy
 # string that append_message rejects. Normalising here keeps that rejection

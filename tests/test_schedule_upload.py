@@ -6,10 +6,14 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+import chat_logic
 from chat_logic import (
     EMPTY_UPLOAD_MESSAGE,
     MAX_UPLOAD_IMAGE_BYTES,
+    MAX_UPLOAD_SHEET_BYTES,
+    MAX_UPLOAD_TEXT_BYTES,
     MAX_UPLOAD_TEXT_CHARS,
+    UNREADABLE_SHEET_MESSAGE,
     UNSUPPORTED_UPLOAD_MESSAGE,
     UPLOAD_INSTRUCTION,
     UPLOAD_TOO_LARGE_MESSAGE,
@@ -89,6 +93,15 @@ class TestTextUploads:
         with pytest.raises(UploadError, match=UPLOAD_TOO_LARGE_MESSAGE):
             upload_to_turn("big.csv", data)
 
+    def test_oversized_text_is_refused_before_it_is_decoded(self, monkeypatch):
+        class Undecodable(bytes):
+            def decode(self, *args, **kwargs):
+                raise AssertionError("decoded despite exceeding the byte ceiling")
+
+        data = Undecodable(b"\x00" * (MAX_UPLOAD_TEXT_BYTES + 1))
+        with pytest.raises(UploadError, match=UPLOAD_TOO_LARGE_MESSAGE):
+            upload_to_turn("big.csv", data)
+
     def test_empty_or_whitespace_file_is_refused(self):
         with pytest.raises(UploadError, match=EMPTY_UPLOAD_MESSAGE):
             upload_to_turn("empty.csv", b"")
@@ -111,9 +124,35 @@ class TestSheetUploads:
         body = content[0]["text"].split("\n\n", 2)[2]
         assert body.splitlines() == ["## Sheet: Week 41", "Day\tPerson", "Tue\t"]
 
-    def test_corrupt_xlsx_is_refused_not_raised(self):
-        with pytest.raises(UploadError, match=EMPTY_UPLOAD_MESSAGE):
+    def test_corrupt_xlsx_gets_its_own_copy_not_the_empty_message(self):
+        with pytest.raises(UploadError, match="could not be read"):
             upload_to_turn("broken.xlsx", b"this is not a zip")
+        with pytest.raises(UploadError, match=UNREADABLE_SHEET_MESSAGE):
+            upload_to_turn("broken.xlsx", b"this is not a zip")
+
+    def test_missing_openpyxl_is_the_operators_defect_and_propagates(self, monkeypatch):
+        def no_openpyxl(_data):
+            raise ImportError("No module named 'openpyxl'")
+
+        monkeypatch.setattr(chat_logic, "_sheet_to_text", no_openpyxl)
+        with pytest.raises(ImportError):
+            upload_to_turn("week41.xlsx", b"PK\x03\x04 whatever")
+
+    def test_oversized_workbook_is_refused_before_it_is_parsed(self, monkeypatch):
+        def must_not_run(_data):
+            raise AssertionError("workbook was parsed despite exceeding the byte ceiling")
+
+        monkeypatch.setattr(chat_logic, "_sheet_to_text", must_not_run)
+        with pytest.raises(UploadError, match=UPLOAD_TOO_LARGE_MESSAGE):
+            upload_to_turn("huge.xlsx", b"\x00" * (MAX_UPLOAD_SHEET_BYTES + 1))
+
+    def test_rendering_stops_once_the_text_bound_is_passed(self):
+        # 2,000 rows of 40 chars is ~80k chars of output; the bound is 40k.
+        rows = [["x" * 40] for _ in range(2_000)]
+        text = chat_logic._sheet_to_text(xlsx_bytes(rows))
+        assert MAX_UPLOAD_TEXT_CHARS < len(text) < 2 * MAX_UPLOAD_TEXT_CHARS
+        with pytest.raises(UploadError, match=UPLOAD_TOO_LARGE_MESSAGE):
+            upload_to_turn("long.xlsx", xlsx_bytes(rows))
 
     def test_sheet_with_no_cells_is_refused(self):
         with pytest.raises(UploadError, match=EMPTY_UPLOAD_MESSAGE):
@@ -184,3 +223,47 @@ class TestContentPartTurns:
         assert payload[1] == {"role": "user", "content": content}
         assert "display" not in payload[1]
         assert payload[2] == {"role": "assistant", "content": "read-back"}
+
+
+class TestUploadPinning:
+    """The latest upload stays in the API payload after the window scrolls past it."""
+
+    def upload_turn(self, name="week41.csv"):
+        history = []
+        content, display = upload_to_turn(name, CSV)
+        append_message(history, "user", content, display=display)
+        return history[0]
+
+    def chatter(self, count, start=0):
+        return [
+            {"role": "assistant" if i % 2 == 0 else "user", "content": f"turn {i}"}
+            for i in range(start, start + count)
+        ]
+
+    def test_upload_inside_the_window_is_not_duplicated(self):
+        history = [self.upload_turn()] + self.chatter(5)
+        payload = build_api_messages(history, "SYSTEM", max_turns=20)
+        assert [m["content"] for m in payload[1:]] == [m["content"] for m in history]
+
+    def test_upload_evicted_by_the_window_is_carried_forward_first(self):
+        upload = self.upload_turn()
+        history = [upload] + self.chatter(30)
+        payload = build_api_messages(history, "SYSTEM", max_turns=20)
+        assert len(payload) == 22
+        assert payload[0]["content"] == "SYSTEM"
+        assert payload[1] == {"role": "user", "content": upload["content"]}
+        assert [m["content"] for m in payload[2:]] == [m["content"] for m in history[-20:]]
+
+    def test_only_the_latest_evicted_upload_is_pinned(self):
+        first = self.upload_turn("week40.csv")
+        second = self.upload_turn("week41.csv")
+        history = [first] + self.chatter(3) + [second] + self.chatter(30, start=3)
+        payload = build_api_messages(history, "SYSTEM", max_turns=20)
+        assert payload[1]["content"] is second["content"]
+        assert all(m["content"] is not first["content"] for m in payload)
+
+    def test_plain_history_is_unchanged_by_pinning(self):
+        history = self.chatter(50)
+        payload = build_api_messages(history, "SYSTEM", max_turns=20)
+        assert len(payload) == 21
+        assert payload[1:] == history[-20:]

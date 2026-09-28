@@ -8,6 +8,7 @@ and session state; this module owns message shaping and error mapping.
 import base64
 import csv
 import io
+import logging
 from pathlib import Path
 
 from openai import (
@@ -17,6 +18,8 @@ from openai import (
     RateLimitError,
     UnprocessableEntityError,
 )
+
+logger = logging.getLogger(__name__)
 
 # User-facing copy for API failures. Raw exception text never reaches the
 # page: it can contain request details and, for auth errors, hints about
@@ -56,6 +59,12 @@ SHEET_UPLOAD_TYPES = ("xlsx",)
 IMAGE_UPLOAD_TYPES = ("png", "jpg", "jpeg", "webp")
 UPLOAD_TYPES = TEXT_UPLOAD_TYPES + SHEET_UPLOAD_TYPES + IMAGE_UPLOAD_TYPES
 MAX_UPLOAD_TEXT_CHARS = 40_000
+# Byte ceilings checked before anything is decoded or parsed, so an oversized
+# file is refused for the cost of len(), not a full openpyxl load. Text is
+# capped at four bytes per allowed character (the widest UTF-8 encoding); a
+# workbook at 4 MB is already far past anything that renders to 40k chars.
+MAX_UPLOAD_TEXT_BYTES = 4 * MAX_UPLOAD_TEXT_CHARS
+MAX_UPLOAD_SHEET_BYTES = 4 * 1024 * 1024
 MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024
 UPLOAD_INSTRUCTION = (
     "Here is the schedule to review. Read it back per section 3, then ask "
@@ -70,6 +79,10 @@ UPLOAD_TOO_LARGE_MESSAGE = (
     "want reviewed, or upload one week at a time."
 )
 EMPTY_UPLOAD_MESSAGE = "That file is empty. Check the export and upload it again."
+UNREADABLE_SHEET_MESSAGE = (
+    "That workbook could not be read. It may be an older .xls renamed, "
+    "password-protected, or damaged. Re-export it as .xlsx or CSV and try again."
+)
 
 
 class UploadError(ValueError):
@@ -140,9 +153,26 @@ def build_api_messages(history, system_prompt, max_turns):
     if max_turns < 1:
         raise ValueError("max_turns must be at least 1")
     bounded = history[-max_turns:]
+    # The schedule itself is the thing under review, and a review runs to many
+    # more turns than the window holds: read-back, intake facts, seven answers
+    # per person, corrections. If the window has scrolled past the most recent
+    # upload, carry that one turn forward ahead of the window so the model is
+    # never asked about a sheet it can no longer see. Only the latest upload
+    # is pinned; an earlier sheet the manager replaced stays evicted.
+    pinned = []
+    if not any(is_upload_turn(m) for m in bounded):
+        for m in reversed(history[: len(history) - len(bounded)]):
+            if is_upload_turn(m):
+                pinned = [m]
+                break
     return [{"role": "system", "content": system_prompt}] + [
-        {"role": m["role"], "content": m["content"]} for m in bounded
+        {"role": m["role"], "content": m["content"]} for m in pinned + bounded
     ]
+
+
+def is_upload_turn(message):
+    """Whether a stored turn carries an upload (content parts, not a string)."""
+    return isinstance(message.get("content"), list)
 
 
 def friendly_error(exc):
@@ -185,21 +215,27 @@ def _sheet_to_text(data):
     from openpyxl import load_workbook
 
     workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    out = io.StringIO()
-    for sheet in workbook.worksheets:
-        rows = [
-            row for row in sheet.iter_rows(values_only=True)
-            if not all(cell is None for cell in row)
-        ]
-        if not rows:
-            # A heading with no rows under it is not a schedule, and would
-            # let an empty workbook through the emptiness check.
-            continue
-        out.write(f"## Sheet: {sheet.title}\n")
+    try:
+        out = io.StringIO()
         writer = csv.writer(out, delimiter="\t", lineterminator="\n")
-        for row in rows:
-            writer.writerow("" if cell is None else str(cell) for cell in row)
-    return out.getvalue()
+        for sheet in workbook.worksheets:
+            heading_written = False
+            for row in sheet.iter_rows(values_only=True):
+                if all(cell is None for cell in row):
+                    continue
+                if not heading_written:
+                    # Written on the first real row, so a sheet with no cells
+                    # contributes nothing and an empty workbook stays empty.
+                    out.write(f"## Sheet: {sheet.title}\n")
+                    heading_written = True
+                writer.writerow("" if cell is None else str(cell) for cell in row)
+                if out.tell() > MAX_UPLOAD_TEXT_CHARS:
+                    # Past the bound already; the caller refuses it, so there
+                    # is no point rendering the rest of the workbook.
+                    return out.getvalue()
+        return out.getvalue()
+    finally:
+        workbook.close()
 
 
 def upload_to_turn(name, data):
@@ -230,11 +266,21 @@ def upload_to_turn(name, data):
         return content, display
 
     if suffix in SHEET_UPLOAD_TYPES:
+        if len(data) > MAX_UPLOAD_SHEET_BYTES:
+            raise UploadError(UPLOAD_TOO_LARGE_MESSAGE)
         try:
             text = _sheet_to_text(data)
+        except ImportError:
+            # A deployment without openpyxl is an operator's defect, not the
+            # manager's file; surfacing it as an upload error would send them
+            # off to re-export a workbook that was never read.
+            raise
         except Exception as exc:  # noqa: BLE001 - any parse failure is the user's file
-            raise UploadError(EMPTY_UPLOAD_MESSAGE) from exc
+            logger.warning("workbook upload could not be parsed: %s", type(exc).__name__)
+            raise UploadError(UNREADABLE_SHEET_MESSAGE) from exc
     else:
+        if len(data) > MAX_UPLOAD_TEXT_BYTES:
+            raise UploadError(UPLOAD_TOO_LARGE_MESSAGE)
         text = data.decode("utf-8", errors="replace")
     if not text.strip():
         raise UploadError(EMPTY_UPLOAD_MESSAGE)
