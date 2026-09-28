@@ -5,6 +5,12 @@ with no network and no UI. The app (`streamlit_app.py`) owns presentation
 and session state; this module owns message shaping and error mapping.
 """
 
+import base64
+import csv
+import io
+import logging
+from pathlib import Path
+
 from openai import (
     APIConnectionError,
     AuthenticationError,
@@ -12,6 +18,8 @@ from openai import (
     RateLimitError,
     UnprocessableEntityError,
 )
+
+logger = logging.getLogger(__name__)
 
 # User-facing copy for API failures. Raw exception text never reaches the
 # page: it can contain request details and, for auth errors, hints about
@@ -42,14 +50,70 @@ EMPTY_RESPONSE_MESSAGE = (
     "rephrase if you were expecting an answer."
 )
 
+# Schedule uploads. Text formats are read and sent as text; images go to the
+# model as images. Anything else is refused with a message rather than a
+# traceback, and the bounds below keep one upload from blowing the context
+# window or the request size.
+TEXT_UPLOAD_TYPES = ("csv", "tsv", "txt", "md")
+SHEET_UPLOAD_TYPES = ("xlsx",)
+IMAGE_UPLOAD_TYPES = ("png", "jpg", "jpeg", "webp")
+UPLOAD_TYPES = TEXT_UPLOAD_TYPES + SHEET_UPLOAD_TYPES + IMAGE_UPLOAD_TYPES
+MAX_UPLOAD_TEXT_CHARS = 40_000
+# Byte ceilings checked before anything is decoded or parsed, so an oversized
+# file is refused for the cost of len(), not a full openpyxl load. Text is
+# capped at four bytes per allowed character (the widest UTF-8 encoding); a
+# workbook at 4 MB is already far past anything that renders to 40k chars.
+MAX_UPLOAD_TEXT_BYTES = 4 * MAX_UPLOAD_TEXT_CHARS
+MAX_UPLOAD_SHEET_BYTES = 4 * 1024 * 1024
+MAX_UPLOAD_IMAGE_BYTES = 8 * 1024 * 1024
+UPLOAD_INSTRUCTION = (
+    "Here is the schedule to review. Read it back per section 3, then ask "
+    "for the intake facts and the preset questions."
+)
+UNSUPPORTED_UPLOAD_MESSAGE = (
+    "That file type is not supported. Upload the schedule as CSV, TSV, TXT, "
+    "XLSX, PNG, JPG or WEBP, or paste it as text."
+)
+UPLOAD_TOO_LARGE_MESSAGE = (
+    "That file is too large to review in one go. Trim it to the period you "
+    "want reviewed, or upload one week at a time."
+)
+EMPTY_UPLOAD_MESSAGE = "That file is empty. Check the export and upload it again."
+UNREADABLE_SHEET_MESSAGE = (
+    "That workbook could not be read. It may be an older .xls renamed, "
+    "password-protected, or damaged. Re-export it as .xlsx or CSV and try again."
+)
 
-def append_message(history, role, content):
-    """Append a validated chat turn to `history` in place."""
+
+class UploadError(ValueError):
+    """An upload the app should refuse with the message it carries."""
+
+
+def append_message(history, role, content, display=None):
+    """Append a validated chat turn to `history` in place.
+
+    `content` is what the API receives: a non-empty string, or a list of
+    content parts for a turn that carries an upload. A list needs `display`,
+    the text the page shows in its place, so a schedule's raw cells (which
+    may hold full names) are never rendered back into the transcript.
+    """
     if role not in ("user", "assistant"):
         raise ValueError(f"unsupported role: {role!r}")
+    if isinstance(content, list):
+        if not content:
+            raise ValueError("content parts must be a non-empty list")
+        if not isinstance(display, str) or not display.strip():
+            raise ValueError("a content-part turn needs display text")
+        history.append({"role": role, "content": content, "display": display})
+        return
     if not isinstance(content, str) or not content.strip():
         raise ValueError("message content must be a non-empty string")
     history.append({"role": role, "content": content})
+
+
+def display_text(message):
+    """The text the page renders for a turn."""
+    return message.get("display", message["content"])
 
 
 def drop_last_message(history, role):
@@ -89,9 +153,26 @@ def build_api_messages(history, system_prompt, max_turns):
     if max_turns < 1:
         raise ValueError("max_turns must be at least 1")
     bounded = history[-max_turns:]
+    # The schedule itself is the thing under review, and a review runs to many
+    # more turns than the window holds: read-back, intake facts, seven answers
+    # per person, corrections. If the window has scrolled past the most recent
+    # upload, carry that one turn forward ahead of the window so the model is
+    # never asked about a sheet it can no longer see. Only the latest upload
+    # is pinned; an earlier sheet the manager replaced stays evicted.
+    pinned = []
+    if not any(is_upload_turn(m) for m in bounded):
+        for m in reversed(history[: len(history) - len(bounded)]):
+            if is_upload_turn(m):
+                pinned = [m]
+                break
     return [{"role": "system", "content": system_prompt}] + [
-        {"role": m["role"], "content": m["content"]} for m in bounded
+        {"role": m["role"], "content": m["content"]} for m in pinned + bounded
     ]
+
+
+def is_upload_turn(message):
+    """Whether a stored turn carries an upload (content parts, not a string)."""
+    return isinstance(message.get("content"), list)
 
 
 def friendly_error(exc):
@@ -110,3 +191,102 @@ def friendly_error(exc):
     if not should_keep_turn(exc):
         return NON_RETRYABLE_MESSAGE
     return GENERIC_ERROR_MESSAGE
+
+
+def load_system_prompt(path):
+    """Read the system prompt from `path`; refuse an empty file.
+
+    The prompt is a document, not a constant, so it lives in a file people can
+    read and diff. An empty or missing file would silently ship the model with
+    no instructions, so both are errors.
+    """
+    text = Path(path).read_text(encoding="utf-8").strip()
+    if not text:
+        raise ValueError(f"system prompt at {path} is empty")
+    return text
+
+
+def _sheet_to_text(data):
+    """Render every worksheet of an .xlsx as tab-separated rows.
+
+    Imported lazily so the module stays importable without openpyxl in
+    environments that only run the text path.
+    """
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    try:
+        out = io.StringIO()
+        writer = csv.writer(out, delimiter="\t", lineterminator="\n")
+        for sheet in workbook.worksheets:
+            heading_written = False
+            for row in sheet.iter_rows(values_only=True):
+                if all(cell is None for cell in row):
+                    continue
+                if not heading_written:
+                    # Written on the first real row, so a sheet with no cells
+                    # contributes nothing and an empty workbook stays empty.
+                    out.write(f"## Sheet: {sheet.title}\n")
+                    heading_written = True
+                writer.writerow("" if cell is None else str(cell) for cell in row)
+                if out.tell() > MAX_UPLOAD_TEXT_CHARS:
+                    # Past the bound already; the caller refuses it, so there
+                    # is no point rendering the rest of the workbook.
+                    return out.getvalue()
+        return out.getvalue()
+    finally:
+        workbook.close()
+
+
+def upload_to_turn(name, data):
+    """Turn an uploaded schedule into (api_content, display) for a user turn.
+
+    Text and spreadsheets become a single text block after the instruction;
+    images become an image content part. Raises UploadError with user-facing
+    copy for anything the app should refuse. The display string names the file
+    only: the cells themselves may carry full names, and the transcript on
+    screen must not.
+    """
+    suffix = Path(name).suffix.lower().lstrip(".")
+    if suffix not in UPLOAD_TYPES:
+        raise UploadError(UNSUPPORTED_UPLOAD_MESSAGE)
+    if not data:
+        raise UploadError(EMPTY_UPLOAD_MESSAGE)
+    display = f"Uploaded schedule: `{Path(name).name}`"
+
+    if suffix in IMAGE_UPLOAD_TYPES:
+        if len(data) > MAX_UPLOAD_IMAGE_BYTES:
+            raise UploadError(UPLOAD_TOO_LARGE_MESSAGE)
+        mime = "image/jpeg" if suffix in ("jpg", "jpeg") else f"image/{suffix}"
+        encoded = base64.b64encode(data).decode("ascii")
+        content = [
+            {"type": "text", "text": UPLOAD_INSTRUCTION},
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
+        ]
+        return content, display
+
+    if suffix in SHEET_UPLOAD_TYPES:
+        if len(data) > MAX_UPLOAD_SHEET_BYTES:
+            raise UploadError(UPLOAD_TOO_LARGE_MESSAGE)
+        try:
+            text = _sheet_to_text(data)
+        except ImportError:
+            # A deployment without openpyxl is an operator's defect, not the
+            # manager's file; surfacing it as an upload error would send them
+            # off to re-export a workbook that was never read.
+            raise
+        except Exception as exc:  # noqa: BLE001 - any parse failure is the user's file
+            logger.warning("workbook upload could not be parsed: %s", type(exc).__name__)
+            raise UploadError(UNREADABLE_SHEET_MESSAGE) from exc
+    else:
+        if len(data) > MAX_UPLOAD_TEXT_BYTES:
+            raise UploadError(UPLOAD_TOO_LARGE_MESSAGE)
+        text = data.decode("utf-8", errors="replace")
+    if not text.strip():
+        raise UploadError(EMPTY_UPLOAD_MESSAGE)
+    if len(text) > MAX_UPLOAD_TEXT_CHARS:
+        raise UploadError(UPLOAD_TOO_LARGE_MESSAGE)
+    content = [
+        {"type": "text", "text": f"{UPLOAD_INSTRUCTION}\n\nFile: {Path(name).name}\n\n{text}"}
+    ]
+    return content, display
