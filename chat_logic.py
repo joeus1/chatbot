@@ -79,6 +79,27 @@ UPLOAD_TOO_LARGE_MESSAGE = (
     "want reviewed, or upload one week at a time."
 )
 EMPTY_UPLOAD_MESSAGE = "That file is empty. Check the export and upload it again."
+# Typed and pasted messages. The 40k-character upload bound above does not
+# reach the chat box, so without this a paste could be as large as the model's
+# context and be resent on every turn of the window. Same bound as an upload:
+# a schedule that fits one has room for the questions and answers around it.
+MAX_CHAT_MESSAGE_CHARS = MAX_UPLOAD_TEXT_CHARS
+MESSAGE_TOO_LONG_MESSAGE = (
+    "That message is too long to review in one go (the limit is "
+    f"{MAX_CHAT_MESSAGE_CHARS:,} characters). Trim it to the period you want "
+    "reviewed, or send one week at a time."
+)
+# One review is a read-back, the intake facts, seven answers per person and a
+# few corrections; a busy store is well under this. It bounds what one session
+# can spend, since the app has no login. Clear conversation starts a new
+# budget, so this slows a runaway loop rather than stopping a determined
+# abuser: the OpenAI key's own spend limit is the hard stop.
+MAX_USER_TURNS_PER_SESSION = 100
+SESSION_TURN_LIMIT_MESSAGE = (
+    "This conversation has reached its limit of "
+    f"{MAX_USER_TURNS_PER_SESSION} messages. Use Clear conversation in the "
+    "sidebar to start a new review."
+)
 UNREADABLE_SHEET_MESSAGE = (
     "That workbook could not be read. It may be an older .xls renamed, "
     "password-protected, or damaged. Re-export it as .xlsx or CSV and try again."
@@ -87,6 +108,29 @@ UNREADABLE_SHEET_MESSAGE = (
 
 class UploadError(ValueError):
     """An upload the app should refuse with the message it carries."""
+
+
+class MessageError(ValueError):
+    """A typed message the app should refuse with the message it carries."""
+
+
+def check_chat_message(text):
+    """Refuse a typed message longer than `MAX_CHAT_MESSAGE_CHARS`.
+
+    The chat box's own `max_chars` is enforced in the browser, so a client
+    that talks to the server directly skips it; this is the check that holds.
+    """
+    if len(text) > MAX_CHAT_MESSAGE_CHARS:
+        raise MessageError(MESSAGE_TOO_LONG_MESSAGE)
+
+
+def session_turn_limit_reached(history, limit=MAX_USER_TURNS_PER_SESSION):
+    """Whether `history` already holds `limit` user turns.
+
+    Counts what the transcript holds, not what was ever sent: a turn dropped
+    as non-retryable was refused by the API, so it does not use up the budget.
+    """
+    return sum(1 for m in history if m["role"] == "user") >= limit
 
 
 def append_message(history, role, content, display=None):

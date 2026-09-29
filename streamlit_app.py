@@ -8,14 +8,19 @@ from openai import APIError, OpenAI
 from chat_logic import (
     EMPTY_RESPONSE_MESSAGE,
     GENERIC_ERROR_MESSAGE,
+    MAX_CHAT_MESSAGE_CHARS,
+    SESSION_TURN_LIMIT_MESSAGE,
     UPLOAD_TYPES,
+    MessageError,
     UploadError,
     append_message,
     build_api_messages,
+    check_chat_message,
     display_text,
     drop_last_message,
     friendly_error,
     load_system_prompt,
+    session_turn_limit_reached,
     should_keep_turn,
     upload_to_turn,
 )
@@ -176,7 +181,9 @@ for message in st.session_state.messages:
 # An upload is sent once, as its own user turn, the first time it appears.
 # The uploader returns the same file on every rerun, so the turn is keyed on
 # the upload event's file_id to stop it being re-sent after each message.
-if upload is not None:
+# Checked before the turn is appended, so a session at its limit sends nothing.
+turn_limit_reached = session_turn_limit_reached(st.session_state.messages)
+if upload is not None and not turn_limit_reached:
     rejected = st.session_state.rejected_upload
     if rejected is not None and rejected[0] == upload.file_id:
         # Refused already; show the same reason without parsing it again.
@@ -198,12 +205,36 @@ if upload is not None:
             if not complete_turn(client, system_prompt):
                 st.session_state.sent_upload = None
 
+# The limit is read again here: an upload accepted above may have used the
+# last turn, and a stale answer would let the chat box add one more.
+turn_limit_reached = session_turn_limit_reached(st.session_state.messages)
+if turn_limit_reached:
+    st.warning(SESSION_TURN_LIMIT_MESSAGE, icon="⏱️")
+
 # chat_input does not trim, so a space-only submission arrives as a truthy
 # string that append_message rejects. Normalising here keeps that rejection
 # from surfacing as a traceback on the one call outside the try below.
-prompt = (st.chat_input("Paste a schedule, or answer the questions") or "").strip()
-if prompt:
-    append_message(st.session_state.messages, "user", prompt)
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    complete_turn(client, system_prompt)
+# max_chars stops a paste in the browser only; check_chat_message is the
+# server-side bound, and a refused message is never added to the history.
+prompt = (
+    st.chat_input(
+        "Paste a schedule, or answer the questions",
+        max_chars=MAX_CHAT_MESSAGE_CHARS,
+        disabled=turn_limit_reached,
+    )
+    or ""
+).strip()
+if prompt and not turn_limit_reached:
+    try:
+        check_chat_message(prompt)
+    except MessageError as exc:
+        st.error(str(exc), icon="✂️")
+    else:
+        append_message(st.session_state.messages, "user", prompt)
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        complete_turn(client, system_prompt)
+        # The box above rendered before this turn was added; rerun so a turn
+        # that used the last slot locks it now, not on the next interaction.
+        if session_turn_limit_reached(st.session_state.messages):
+            st.rerun()
