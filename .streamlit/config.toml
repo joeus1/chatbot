@@ -1,0 +1,9 @@
+[server]
+# Streamlit reads a whole upload into memory before the app can look at it, and
+# its own ceiling is 200 MB. Match the largest file the app accepts (images,
+# MAX_UPLOAD_IMAGE_BYTES in chat_logic.py) so a bigger one is refused up front.
+maxUploadSize = 8
+# Bound on one websocket message, so a pasted message cannot arrive in the
+# hundreds of megabytes. The largest legitimate one is a 40,000-character
+# paste, well under this.
+maxMessageSize = 5
