@@ -41,6 +41,19 @@ hand-worked example live in the platform repo at
    for the review and is not stored by the app; only its name appears in the
    transcript. PDF is not supported yet.
 
+### Running the prompt from the command line
+
+`scripts/run_review.py` drives the same prompt and upload code as the app
+without the UI: the schedule upload as turn one, the intake facts and answers
+as turn two, both replies printed. `examples/` holds a synthetic schedule and
+answer file that exercise the naming, pay-column, unreadable-cell and
+volunteered-reason rules.
+
+```
+$ python scripts/run_review.py --dry-run examples/demo_schedule.csv examples/demo_answers.md
+$ OPENAI_API_KEY=... python scripts/run_review.py examples/demo_schedule.csv examples/demo_answers.md
+```
+
 ### Development
 
 Model (`gpt-4o`; it must accept image input for photo uploads), history
