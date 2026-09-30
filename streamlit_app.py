@@ -8,6 +8,7 @@ from openai import APIError, OpenAI
 from chat_logic import (
     EMPTY_RESPONSE_MESSAGE,
     GENERIC_ERROR_MESSAGE,
+    INCOMPLETE_RESPONSE_MESSAGE,
     MAX_CHAT_MESSAGE_CHARS,
     SESSION_TURN_LIMIT_MESSAGE,
     UPLOAD_TYPES,
@@ -24,14 +25,15 @@ from chat_logic import (
     should_keep_turn,
     upload_to_turn,
 )
+from manager_guidance import render_manager_questions
 
 # gpt-4o over gpt-4o-mini: the review is three tables and a set of refusals
 # the prompt spells out, and the smaller model drifts on both. Both accept
 # image input, which the photo upload path needs.
 MODEL = "gpt-4o"
 MAX_HISTORY_TURNS = 20
-# A full review carries three tables and seven sections; 1024 cut it mid-table.
-MAX_COMPLETION_TOKENS = 4096
+# Business context, work observations and proposed schedules need output room.
+MAX_COMPLETION_TOKENS = 8192
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "schedule_review.md"
 
 logger = logging.getLogger(__name__)
@@ -62,7 +64,7 @@ def get_client(api_key):
 
 @st.cache_resource
 def get_system_prompt():
-    return load_system_prompt(SYSTEM_PROMPT_PATH)
+    return load_system_prompt(SYSTEM_PROMPT_PATH, require_manager_questions=True)
 
 
 def complete_turn(client, system_prompt):
@@ -85,9 +87,22 @@ def complete_turn(client, system_prompt):
             max_tokens=MAX_COMPLETION_TOKENS,
             stream=True,
         )
+        finish_reason = None
+
+        def tracked_chunks():
+            nonlocal finish_reason
+            for chunk in stream:
+                for choice in getattr(chunk, "choices", []):
+                    if choice.finish_reason:
+                        finish_reason = choice.finish_reason
+                yield chunk
+
         with st.chat_message("assistant"):
-            response = st.write_stream(stream)
+            response = st.write_stream(tracked_chunks())
         if isinstance(response, str) and response.strip():
+            if finish_reason == "length":
+                response += f"\n\n**{INCOMPLETE_RESPONSE_MESSAGE}**"
+                st.warning(INCOMPLETE_RESPONSE_MESSAGE)
             append_message(st.session_state.messages, "assistant", response)
         elif isinstance(response, str):
             # The call succeeded and streamed nothing. That is not a failure,
@@ -111,11 +126,28 @@ def complete_turn(client, system_prompt):
 
 st.title("📋 PrimeOps Schedule Review")
 st.caption(
-    "Upload the schedule you already made, answer a few preset questions about "
-    "each person, and get findings, a proposed fix and feedback. Not a payroll "
-    "tool: no pay, hours worked or timeclock data is read. People are named by "
-    "first name and last initial only."
+    "Review your schedule using your concept, SOPs, sales patterns and observed "
+    "work examples. Get coverage findings and individual coaching indicators. "
+    "Payroll and timeclock analysis is outside this review. Use first name and last initial only."
 )
+st.caption(
+    "Answers and uploads are sent to OpenAI as supplied and held in this review's session. "
+    "Remove payroll, medical, protected personal details and unnecessary identifiers before "
+    "submitting; the app does not automatically redact your input."
+)
+
+with st.expander("Manager preset questions"):
+    st.caption(
+        "Answer the business questions once, then repeat the person questions for "
+        "each employee. Paste your answers in the chat; use Not observed when evidence "
+        "is missing. Include the observation dates and source."
+    )
+    st.markdown(render_manager_questions())
+    st.caption(
+        "Federal-law guidance for coaching and schedule review. The manager reviews "
+        "the evidence and decides next steps. This is not a legal-compliance determination; "
+        "state/local law and agreements may add protections."
+    )
 
 api_key = get_api_key()
 if not api_key:
@@ -133,8 +165,8 @@ try:
 except (OSError, ValueError):
     logger.exception("system prompt could not be loaded")
     st.error(
-        f"The system prompt at `{SYSTEM_PROMPT_PATH}` is missing or empty, so the "
-        "app cannot review anything. Restore the file and reload.",
+        "The review instructions are unavailable. Please contact the app administrator "
+        "and reload once they are restored.",
         icon="📄",
     )
     st.stop()
@@ -162,8 +194,8 @@ with st.sidebar:
         key=f"uploader-{st.session_state.uploader_key}",
         help=(
             "CSV, TSV, TXT, XLSX, or a PNG/JPG/WEBP photo or screenshot. The "
-            "file goes to OpenAI for the review and is not stored by this app. "
-            "Only the file name appears in the transcript."
+            "file is sent to OpenAI as supplied and held in this review's session. "
+            "Remove sensitive details first. Only the file name appears in the transcript."
         ),
     )
     st.caption("Or paste the schedule as text in the chat.")

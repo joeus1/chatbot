@@ -63,7 +63,7 @@ class TestSystemPrompt:
 
 class TestTextUploads:
     def test_csv_becomes_one_text_part_after_the_instruction(self):
-        content, display = upload_to_turn("week41.csv", CSV)
+        content, _display = upload_to_turn("week41.csv", CSV)
         assert len(content) == 1
         assert content[0]["type"] == "text"
         assert content[0]["text"].startswith(UPLOAD_INSTRUCTION)

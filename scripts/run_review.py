@@ -21,7 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from chat_logic import (  # noqa: E402 - path set above
+from chat_logic import (
+    INCOMPLETE_RESPONSE_MESSAGE,
     append_message,
     build_api_messages,
     load_system_prompt,
@@ -30,7 +31,7 @@ from chat_logic import (  # noqa: E402 - path set above
 
 MODEL = "gpt-4o"
 MAX_HISTORY_TURNS = 20
-MAX_COMPLETION_TOKENS = 4096
+MAX_COMPLETION_TOKENS = 8192
 PROMPT_PATH = ROOT / "prompts" / "schedule_review.md"
 
 
@@ -48,12 +49,14 @@ def describe(messages):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("schedule", type=Path, help="schedule file: csv, tsv, txt, md, xlsx, png, jpg, webp")
-    parser.add_argument("answers", type=Path, help="text file with the intake facts and Q1-Q7 answers")
+    parser.add_argument(
+        "answers", type=Path, help="text file with B1-B7 business context and Q1-Q10 job observations"
+    )
     parser.add_argument("--dry-run", action="store_true", help="print the payload, make no API call")
     parser.add_argument("--model", default=MODEL)
     args = parser.parse_args(argv)
 
-    system_prompt = load_system_prompt(PROMPT_PATH)
+    system_prompt = load_system_prompt(PROMPT_PATH, require_manager_questions=True)
     history = []
     content, display = upload_to_turn(args.schedule.name, args.schedule.read_bytes())
     append_message(history, "user", content, display=display)
@@ -69,7 +72,7 @@ def main(argv=None):
     if not api_key:
         print("OPENAI_API_KEY is not set; use --dry-run to see the payload.", file=sys.stderr)
         return 2
-    from openai import OpenAI  # noqa: PLC0415 - only needed for a live run
+    from openai import OpenAI
 
     client = OpenAI(api_key=api_key)
 
@@ -79,16 +82,28 @@ def main(argv=None):
             messages=build_api_messages(history, system_prompt, MAX_HISTORY_TURNS),
             max_tokens=MAX_COMPLETION_TOKENS,
         )
-        text = response.choices[0].message.content or ""
+        choice = response.choices[0]
+        text = choice.message.content or ""
+        incomplete = choice.finish_reason == "length"
+        if incomplete:
+            text += f"\n\n{INCOMPLETE_RESPONSE_MESSAGE}"
         append_message(history, "assistant", text)
-        return text
+        return text, incomplete
 
     print(f"# {display}\n")
     print("## Turn 1: read-back\n")
-    print(reply(), "\n")
+    text, incomplete = reply()
+    print(text, "\n")
+    if incomplete:
+        print(INCOMPLETE_RESPONSE_MESSAGE, file=sys.stderr)
+        return 3
     append_message(history, "user", answers)
     print("## Turn 2: review\n")
-    print(reply())
+    text, incomplete = reply()
+    print(text)
+    if incomplete:
+        print(INCOMPLETE_RESPONSE_MESSAGE, file=sys.stderr)
+        return 3
     return 0
 
 
