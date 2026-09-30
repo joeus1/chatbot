@@ -19,6 +19,8 @@ from openai import (
     UnprocessableEntityError,
 )
 
+from manager_guidance import render_manager_questions
+
 logger = logging.getLogger(__name__)
 
 # User-facing copy for API failures. Raw exception text never reaches the
@@ -48,6 +50,11 @@ NON_RETRYABLE_MESSAGE = (
 EMPTY_RESPONSE_MESSAGE = (
     "The assistant returned an empty reply. Nothing failed - ask again or "
     "rephrase if you were expecting an answer."
+)
+INCOMPLETE_RESPONSE_MESSAGE = (
+    "This response is incomplete because it reached the output limit. "
+    "Do not use it as a final review. Ask to continue from the last section, "
+    "or review a smaller roster."
 )
 
 # Schedule uploads. Text formats are read and sent as text; images go to the
@@ -89,7 +96,7 @@ MESSAGE_TOO_LONG_MESSAGE = (
     f"{MAX_CHAT_MESSAGE_CHARS:,} characters). Trim it to the period you want "
     "reviewed, or send one week at a time."
 )
-# One review is a read-back, the intake facts, seven answers per person and a
+# One review is a read-back, business facts, work observations per person and a
 # few corrections; a busy store is well under this. It bounds what one session
 # can spend, since the app has no login. Clear conversation starts a new
 # budget, so this slows a runaway loop rather than stopping a determined
@@ -198,7 +205,7 @@ def build_api_messages(history, system_prompt, max_turns):
         raise ValueError("max_turns must be at least 1")
     bounded = history[-max_turns:]
     # The schedule itself is the thing under review, and a review runs to many
-    # more turns than the window holds: read-back, intake facts, seven answers
+    # more turns than the window holds: read-back, business facts, work observations
     # per person, corrections. If the window has scrolled past the most recent
     # upload, carry that one turn forward ahead of the window so the model is
     # never asked about a sheet it can no longer see. Only the latest upload
@@ -237,8 +244,8 @@ def friendly_error(exc):
     return GENERIC_ERROR_MESSAGE
 
 
-def load_system_prompt(path):
-    """Read the system prompt from `path`; refuse an empty file.
+def load_system_prompt(path: str | Path, *, require_manager_questions: bool = False) -> str:
+    """Read a prompt and render its shared manager questionnaire, if present.
 
     The prompt is a document, not a constant, so it lives in a file people can
     read and diff. An empty or missing file would silently ship the model with
@@ -247,7 +254,11 @@ def load_system_prompt(path):
     text = Path(path).read_text(encoding="utf-8").strip()
     if not text:
         raise ValueError(f"system prompt at {path} is empty")
-    return text
+    placeholder = "{{MANAGER_PRESET_QUESTIONS}}"
+    count = text.count(placeholder)
+    if count > 1 or (require_manager_questions and count != 1):
+        raise ValueError("review prompt must contain exactly one manager-question placeholder")
+    return text.replace(placeholder, render_manager_questions()) if count else text
 
 
 def _sheet_to_text(data):
@@ -319,7 +330,7 @@ def upload_to_turn(name, data):
             # manager's file; surfacing it as an upload error would send them
             # off to re-export a workbook that was never read.
             raise
-        except Exception as exc:  # noqa: BLE001 - any parse failure is the user's file
+        except Exception as exc:
             logger.warning("workbook upload could not be parsed: %s", type(exc).__name__)
             raise UploadError(UNREADABLE_SHEET_MESSAGE) from exc
     else:
