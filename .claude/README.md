@@ -16,6 +16,14 @@ In-house Claude Code toolkit for HalalWay repos. Everything here loads automatic
 | `build-error-resolver` | Minimal-diff fixes for broken builds/types/lint |
 | `refactor-cleaner` | Evidence-based dead code and duplicate removal |
 | `doc-updater` | Syncs READMEs/docs/examples with what a diff changed |
+| `data-privacy-officer` | Privacy compliance advice; not a legal opinion (read-only) |
+| `minimal-change-engineer` | Smallest diff that solves the ask; refuses scope creep |
+| `prompt-engineer` | Designs and tests prompts such as prompts/schedule_review.md |
+| `ai-generated-code-auditor` | Audits AI-written code for security flaws (read-only) |
+| `compliance-auditor` | Compliance readiness review; guidance, not a legal determination (read-only) |
+| `model-qa` | Independent QA of model behavior and outputs (read-only) |
+| `evidence-collector` | Evidence-first QA; nothing passes without proof (read-only) |
+| `reality-checker` | Skeptical readiness check; defaults to NEEDS WORK without evidence (read-only) |
 
 **Commands** (`commands/`): `/plan`, `/review`, `/security`, `/tdd`, `/fix` (bug fix, reproduction-test-first), `/ship` (verify → commit → push, gated on green), `/cleanup`, `/learn` (save a session lesson as a skill), `/verify` (runs this repo's actual checks).
 
