@@ -16,6 +16,8 @@ In-house Claude Code toolkit for HalalWay repos. Everything here loads automatic
 | `build-error-resolver` | Minimal-diff fixes for broken builds/types/lint |
 | `refactor-cleaner` | Evidence-based dead code and duplicate removal |
 | `doc-updater` | Syncs READMEs/docs/examples with what a diff changed |
+| `minimal-change-engineer` | Smallest diff that solves the ask; surfaces adjacent problems instead of fixing them |
+| `prompt-engineer` | Edits and tests prompts/schedule_review.md within the coaching-only constraints |
 
 **Commands** (`commands/`): `/plan`, `/review`, `/security`, `/tdd`, `/fix` (bug fix, reproduction-test-first), `/ship` (verify → commit → push, gated on green), `/cleanup`, `/learn` (save a session lesson as a skill), `/verify` (runs this repo's actual checks).
 
